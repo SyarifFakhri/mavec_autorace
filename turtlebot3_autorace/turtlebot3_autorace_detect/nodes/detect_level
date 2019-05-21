@@ -251,7 +251,7 @@ class DetectLevel():
             
             rospy.loginfo("SLOWDOWN!!")
 
-            msg_pub_max_vel.data = 0.00
+            msg_pub_max_vel.data = 0.02
             self.pub_max_vel.publish(msg_pub_max_vel)
 
             pub_level_crossing_return.data = self.StepOfLevelCrossing.searching_level.value
@@ -270,7 +270,7 @@ class DetectLevel():
             rospy.loginfo("STOP~~")
 
             msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.0
+            msg_pub_max_vel.data = 0.01
             self.pub_max_vel.publish(msg_pub_max_vel)
 
             pub_level_crossing_return.data = self.StepOfLevelCrossing.watching_level.value
@@ -283,15 +283,17 @@ class DetectLevel():
                 is_level_detected = self.dlLevelDetected
                 print "level not detected counter: " + str(self.levelNotDetectedCounter)
 
-                if is_level_close == False and is_level_detected == False:
+                if is_level_detected == False:
                     self.levelNotDetectedCounter += 1
                     rospy.sleep(0.2)
                 else:
-                    self.levelNotDetectedCounter = 0
+                    if self.levelNotDetectedCounter > 0:
+                        self.levelNotDetectedCounter -= 1
                     rospy.sleep(0.2)
                     pass
 
                 if self.levelNotDetectedCounter > 20: #5 continous non detections
+                    self.levelNotDetectedCounter = 0
                     break
 
             rospy.loginfo("GO~~")

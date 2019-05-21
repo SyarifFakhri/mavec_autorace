@@ -84,7 +84,6 @@ class DetectLane():
         self.pub_white_line_reliability = rospy.Publisher('/detect/white_line_reliability', UInt8, queue_size=1)
  
         self.cvBridge = CvBridge()
-
         self.counter = 1
 
         self.window_width = 2000.
@@ -93,7 +92,7 @@ class DetectLane():
         self.reliability_white_line = 100
         self.reliability_yellow_line = 100
 
-        self.previousX = int(320/2)
+        self.curvature = 0
 
         try:
             lane_fit = np.polyfit([0, 100], [320/2, 320/2 - 10], 2)
@@ -192,6 +191,7 @@ class DetectLane():
             print (e)
 
         self.make_lane(cv_image, white_fraction, yellow_fraction)
+
 
     def maskWhiteLane(self, image):
         # Convert BGR to HSV
@@ -330,6 +330,8 @@ class DetectLane():
         # Fit a second order polynomial to each
         lane_fit = np.polyfit(y, x, 2)
 
+        self.lane_fitted = lane_fit
+
         # Generate x and y values for plotting
         ploty = np.linspace(0, image.shape[0] - 1, image.shape[0])
         lane_fitx = lane_fit[0] * ploty ** 2 + lane_fit[1] * ploty + lane_fit[2]
@@ -406,6 +408,7 @@ class DetectLane():
         # Fit a second order polynomial to each
         try:
             lane_fit = np.polyfit(y, x, 2)
+            self.lane_fitted = lane_fit
             self.lane_fit_bef = lane_fit
         except:
             lane_fit = self.lane_fit_bef
@@ -460,21 +463,31 @@ class DetectLane():
         #         cv2.polylines(color_warp_lines, np.int_([pts_center]), isClosed=False, color=(0, 255, 255), thickness=12)
 
         # elif self.reliability_white_line > reliability_thresh and self.reliability_yellow_line <= reliability_thresh:
-        if self.reliability_white_line > self.reliability_yellow_line and self.reliability_white_line >= 5: # and self.reliability_white_line > 5:
-            print("following white, reliability: ", self.reliability_white_line)
-            centerx = np.subtract(self.right_fitx, 300) #the bigger it is the more to the left it is
-            pts_center = np.array([np.transpose(np.vstack([centerx, ploty]))])
-            self.couldMakeLane = True
-            cv2.polylines(color_warp_lines, np.int_([pts_center]), isClosed=False, color=(0, 255, 255), thickness=12)
-            self.previousX = centerx
+        # if self.reliability_white_line > self.reliability_yellow_line and self.reliability_white_line >= 5: # and self.reliability_white_line > 5:
+        #     print("following white, reliability: ", self.reliability_white_line)
+        #     centerx = np.subtract(self.right_fitx, 300) #the bigger it is the more to the left it is
+        #     pts_center = np.array([np.transpose(np.vstack([centerx, ploty]))])
+        #     self.couldMakeLane = True
+        #     cv2.polylines(color_warp_lines, np.int_([pts_center]), isClosed=False, color=(0, 255, 255), thickness=12)
+        #     self.previousX = centerx
         # elif self.reliability_white_line <= reliability_thresh and self.reliability_yellow_line > reliability_thresh:
-        elif self.reliability_yellow_line >= self.reliability_white_line: #and self.reliability_yellow_line > 5:
-            print("following yellow, reliability: ", self.reliability_yellow_line)
-            centerx = np.add(self.left_fitx, 300) #The bigger it is the more to the right it is
-            pts_center = np.array([np.transpose(np.vstack([centerx, ploty]))])
-            self.couldMakeLane = True
-            cv2.polylines(color_warp_lines, np.int_([pts_center]), isClosed=False, color=(0, 255, 255), thickness=12)
-            self.previousX = centerx
+        if self.reliability_yellow_line > 0: #and self.reliability_yellow_line > 5:
+            # print("following yellow, reliability: ", self.reliability_yellow_line)
+            try:
+                if self.lane_fitted[0] < 0.001: #straight
+                    centerx = np.add(self.left_fitx, 100) #The bigger it is the more to the right it is #for lane:120  #for traffic light:
+                else:
+                    centerx = np.add(self.left_fitx, 80)
+            except:
+                pass
+
+            try:
+                pts_center = np.array([np.transpose(np.vstack([centerx, ploty]))])
+                self.couldMakeLane = True
+                cv2.polylines(color_warp_lines, np.int_([pts_center]), isClosed=False, color=(0, 255, 255), thickness=12)
+                self.previousX = centerx
+            except:
+                pass
 
         else:
             print "No lane detected"
@@ -485,20 +498,38 @@ class DetectLane():
             # TODO: stop
             pass
 
+        print "lane fit: " + str(self.lane_fitted)
+
         # Combine the result with the original image
         final = cv2.addWeighted(cv_image, 1, color_warp, 0.2, 0)
         final = cv2.addWeighted(final, 1, color_warp_lines, 1, 0)
 
         if self.pub_image_type == "compressed":
             if self.is_center_x_exist == True:
-                # publishes lane center
-                msg_desired_center = Float64()
-                msg_desired_center.data = centerx.item(350)
-                self.pub_lane.publish(msg_desired_center)
+                try:
+                    print "center"
+                    # publishes lane center
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = centerx.item(350)
+                    self.pub_lane.publish(msg_desired_center)
+                except:
+                    print "exception center"
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = 350
+                    self.pub_lane.publish(msg_desired_center)
+
             else:
-                msg_desired_center = Float64()
-                msg_desired_center.data = self.previousX.item(350)
-                self.pub_lane.publish(msg_desired_center)
+                try:
+                    print "previous center"
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = self.previousX.item(350)
+                    self.pub_lane.publish(msg_desired_center)
+                except:
+                    print "exception center"
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = 350
+                    self.pub_lane.publish(msg_desired_center)
+
 
 
             self.pub_image_lane.publish(self.cvBridge.cv2_to_compressed_imgmsg(final, "jpg"))
@@ -510,9 +541,14 @@ class DetectLane():
                 msg_desired_center.data = centerx.item(350)
                 self.pub_lane.publish(msg_desired_center)
             else:
-                msg_desired_center = Float64()
-                msg_desired_center.data = self.previousX.item(350)
-                self.pub_lane.publish(msg_desired_center)
+                try:
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = self.previousX.item(350)
+                    self.pub_lane.publish(msg_desired_center)
+                except:
+                    msg_desired_center = Float64()
+                    msg_desired_center.data = 350
+                    self.pub_lane.publish(msg_desired_center)
 
             self.pub_image_lane.publish(self.cvBridge.cv2_to_imgmsg(final, "bgr8"))
 

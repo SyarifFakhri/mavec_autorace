@@ -174,7 +174,7 @@ class DetectParking():
                     self.is_parking_allowed = False
                     rospy.loginfo("right side is full")
 
-            rospy.sleep(2) #just let it follow parking for a little longer
+            rospy.sleep(8) #just let it follow parking for a little longer
 
             msg_pub_max_vel = Float64()
             msg_pub_max_vel.data = 0.0
@@ -204,7 +204,7 @@ class DetectParking():
 
 
             msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.15
+            msg_pub_max_vel.data = 0.12
             self.pub_max_vel.publish(msg_pub_max_vel)
 
             msg_pub_parking_lot_return.data = self.StepOfParkingLot.parking.value
@@ -272,16 +272,16 @@ class DetectParking():
 
         # Filter by Area.
         params.filterByArea = True
-        params.minArea = 1000
-        params.maxArea = 5000
+        params.minArea = 50
+        params.maxArea = 10000
 
         # Filter by Circularity
-        params.filterByCircularity = True
-        params.minCircularity = 0.2
+        params.filterByCircularity = False
+        params.minCircularity = 0.1
 
         # Filter by Convexity
         params.filterByConvexity = True
-        params.minConvexity = 0.8
+        params.minConvexity = 0.3
 
         det = cv2.SimpleBlobDetector_create(params)
         keypts = det.detect(self.cv_bitn_img)
@@ -294,15 +294,15 @@ class DetectParking():
             x = int(keypts[i].pt[0])
             y = int(keypts[i].pt[1])
 
-            if x > 500:
+            if x > 100:
                 count += 1
 
         if count >= 1:
             print "Detected blob"
             self.blobCount += 1
-            rospy.sleep(0.2)
+            rospy.sleep(0.1)
             print "blob count: " + str(self.blobCount)
-            if self.blobCount > 2:
+            if self.blobCount > 1:
                 return True
         else:
             print "No blob, current blob: " + str(self.blobCount)

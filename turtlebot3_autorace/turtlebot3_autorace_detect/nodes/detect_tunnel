@@ -33,33 +33,50 @@ from move_base_msgs.msg import MoveBaseActionResult
 class DetectTunnel():
     def __init__(self):
         self.sub_tunnel_order = rospy.Subscriber('/detect/tunnel_order', UInt8, self.cbTunnelOrder, queue_size=1)
-        self.sub_arrival_status = rospy.Subscriber("/move_base/result", MoveBaseActionResult, self.cbGetNavigationResult, queue_size=1)
+        # self.sub_arrival_status = rospy.Subscriber("/move_base/result", MoveBaseActionResult, self.cbGetNavigationResult, queue_size=1)
         self.sub_odom = rospy.Subscriber('/odom', Odometry, self.cbOdom, queue_size=1)
 
         self.pub_tunnel_return = rospy.Publisher('/detect/tunnel_stamped', UInt8, queue_size=1)
-        self.pub_goal_pose_stamped = rospy.Publisher("/move_base_simple/goal", PoseStamped, queue_size=1)
-        self.pub_init_pose = rospy.Publisher("/initialpose", PoseWithCovarianceStamped, queue_size=1)
+        # self.pub_goal_pose_stamped = rospy.Publisher("/move_base_simple/goal", PoseStamped, queue_size=1)
+        # self.pub_init_pose = rospy.Publisher("/initialpose", PoseWithCovarianceStamped, queue_size=1)
         self.pub_cmd_vel = rospy.Publisher('/control/cmd_vel', Twist, queue_size = 1)
         self.pub_max_vel = rospy.Publisher('/control/max_vel', Float64, queue_size = 1)
+        self.sub_scan_obstacle = rospy.Subscriber('/scan', LaserScan, self.cbScanObstacle, queue_size=1)
 
         self.StepOfTunnel = Enum('StepOfTunnel', 'searching_tunnel_sign go_in_to_tunnel navigation go_out_from_tunnel exit')
+        self.threshold = 0
 
         self.is_navigation_finished = False
         self.is_tunnel_finished = False
 
+        self.lastError = 0
         self.totalError = 0
-
+        self.is_obstacle_detected = False
         self.last_current_theta = 0.0
+        self.desired_theta = 0
+    #
+    # def cbGetNavigationResult(self, msg_nav_result):
+    #     if msg_nav_result.status.status == 3:
+    #         rospy.loginfo("Reached")
+    #         self.is_navigation_finished = True
 
-    def cbGetNavigationResult(self, msg_nav_result):
-        if msg_nav_result.status.status == 3:
-            rospy.loginfo("Reached")
-            self.is_navigation_finished = True
+    def cbScanObstacle(self, scan):
+        angle_scan = 5
+        scan_start = 0 - angle_scan
+        scan_end = 0 + angle_scan
+        threshold_distance = self.threshold
+        is_obstacle_detected = False
+
+        for i in range(scan_start, scan_end):
+            if scan.ranges[i] < threshold_distance and scan.ranges[i] > 0.01:
+                is_obstacle_detected = True
+            # print scan.ranges[i]
+
+        self.is_obstacle_detected = is_obstacle_detected
 
 
     def cbTunnelOrder(self, order):
         pub_tunnel_return = UInt8()
-
         if order.data == self.StepOfTunnel.searching_tunnel_sign.value:
             rospy.loginfo("Now lane_following")
 
@@ -69,85 +86,381 @@ class DetectTunnel():
         elif order.data == self.StepOfTunnel.go_in_to_tunnel.value:
             rospy.loginfo("Now go_in_to_tunnel")
 
+            #go straight
+            print "first straight"
             self.lastError = 0.0
+            self.totalError = 0.0
             self.start_pos_x = self.current_pos_x
             self.start_pos_y = self.current_pos_y
 
-            while True:
-                error = self.fnStraight(0.20)
-
-                if math.fabs(error) < 0.005:
-                    self.totalError = 0
-                    break
-
-            self.fnStop()
-
-            rospy.loginfo("go_in_to_tunnel finished")
-
-            pub_tunnel_return.data = self.StepOfTunnel.go_in_to_tunnel.value
-
-
-        elif order.data == self.StepOfTunnel.navigation.value:
-            rospy.loginfo("Now navigation")
-            initialPose = PoseWithCovarianceStamped()
-            initialPose.header.frame_id = "map"
-            initialPose.header.stamp = rospy.Time.now()
-            #initialPose.pose.pose = self.odom_msg.pose.pose
-            initialPose.pose.pose.position.x =  0.273272514343
-            initialPose.pose.pose.position.y = 0.0254210233688
-            initialPose.pose.pose.position.z = 0.0
-			
-            initialPose.pose.pose.orientation.x = 0.0
-            initialPose.pose.pose.orientation.y = 0.0
-            initialPose.pose.pose.orientation.z = 0.0120937938605
-            initialPose.pose.pose.orientation.w = 0.999926867401
-
-            initialPose.pose.covariance = [
-                0.1, 0, 0, 0, 0, 0,
-                0, 0.1, 0, 0, 0, 0,
-                0, 0, 0.1, 0, 0, 0,
-                0, 0, 0, 0.1, 0, 0,
-                0, 0, 0, 0, 0.1, 0,
-                0, 0, 0, 0, 0, 0.1
-            ]
- 
-            self.pub_init_pose.publish(initialPose)
-
-            self.fnPubGoalPose()
-
-            while True:
-                if self.is_navigation_finished == True:
+            self.threshold = 0.3
+            while True: #go straight
+                #print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
                     break
                 else:
-                    pass
+                    twist = Twist()
+                    twist.linear.x = 0.10
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
 
-            pub_tunnel_return.data = self.StepOfTunnel.navigation.value
-
-
-        elif order.data == self.StepOfTunnel.go_out_from_tunnel.value:
-            rospy.loginfo("Now go_out_from_tunnel")
-
+            # turn left
+            print "first left"
             self.lastError = 0.0
+            self.totalError = 0.0
+
+            self.desired_theta = self.current_theta + 1.45
+
+            while True:
+                rospy.loginfo("outer_turn_first")
+
+
+                error = self.fnTurn()
+
+                if math.fabs(error) < 0.05:
+                    rospy.loginfo("outer_turn_first finished")
+                    break
+                rospy.sleep(0.1) #10hz
+
+            #go straight again
+            print "second straight"
+            # go straight
+            self.lastError = 0.0
+            self.totalError = 0.0
             self.start_pos_x = self.current_pos_x
             self.start_pos_y = self.current_pos_y
 
-            while True:
-                error = self.fnStraight(0.80)
+            self.threshold = 0.38
+            while True:  # go straight
+                # print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
+                    break
+                else:
+                    twist = Twist()
+                    twist.linear.x = 0.10
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
+            #turn left
+            print "second left"
+            self.lastError = 0.0
+            self.totalError = 0.0
 
-                if math.fabs(error) < 0.005:
-                    self.totalError = 0
+            self.desired_theta = self.current_theta + 1.50
+
+            while True:
+                rospy.loginfo("outer_turn_first")
+
+
+                error = self.fnTurn()
+
+                if math.fabs(error) < 0.05:
+                    rospy.loginfo("outer_turn_first finished")
+                    break
+                rospy.sleep(0.1) #10hz
+
+            #go straight
+            print "third straight"
+            self.lastError = 0.0
+            self.totalError = 0.0
+            self.start_pos_x = self.current_pos_x
+            self.start_pos_y = self.current_pos_y
+
+            self.threshold = 0.3
+            while True:  # go straight
+                # print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
+                    break
+                else:
+                    twist = Twist()
+                    twist.linear.x = 0.10
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
+
+            #turn right
+            print "third right"
+            self.lastError = 0.0
+            self.totalError = 0.0
+
+            self.desired_theta = self.current_theta - 1.45
+
+            while True:
+                rospy.loginfo("outer_turn_first")
+
+                error = self.fnTurn()
+
+                if math.fabs(error) < 0.05:
+                    rospy.loginfo("outer_turn_first finished")
+                    break
+                rospy.sleep(0.1) #10hz
+
+            # go straight
+            print "fourth straight"
+            self.lastError = 0.0
+            self.totalError = 0.0
+
+            self.threshold = 0.3
+            while True:  # go straight
+                # print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
+                    break
+                else:
+                    twist = Twist()
+                    twist.linear.x = 0.10
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
+
+            #turn right
+            print "fourth right"
+            self.lastError = 0.0
+            self.totalError = 0.0
+
+            self.desired_theta = self.current_theta - 1.57
+
+            while True:
+                rospy.loginfo("outer_turn_first")
+
+
+                error = self.fnTurn()
+
+                if math.fabs(error) < 0.05:
+                    rospy.loginfo("outer_turn_first finished")
+                    break
+                rospy.sleep(0.1) #10hz
+
+            # go straight
+            print "fifth straight"
+            self.lastError = 0.0
+            self.totalError = 0.0
+            self.start_pos_x = self.current_pos_x
+            self.start_pos_y = self.current_pos_y
+
+            self.threshold = 0.3 #SECOND LAST STRAIGHT TURN
+            while True:  # go straight
+                # print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
+                    break
+                else:
+                    twist = Twist()
+                    twist.linear.x = 0.10
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
+            #turn left #based on obstacle
+            print "final turn"
+            self.lastError = 0.0
+            self.totalError = 0.0
+            self.threshold = 1.0
+            self.desired_theta = self.current_theta + 1.45
+
+            while True:
+                rospy.loginfo("outer_turn_first")
+
+
+                error = self.fnTurn()
+
+                if self.is_obstacle_detected == False:
+                    rospy.sleep(0.2)
                     break
 
-            self.fnStop()
+                if math.fabs(error) < 0.05:
+                    rospy.loginfo("outer_turn_first finished")
+                    break
+                rospy.sleep(0.1) #10hz
 
-            pub_tunnel_return.data = self.StepOfTunnel.go_out_from_tunnel.value
+            # go straight
+            self.lastError = 0.0
+            self.totalError = 0.0
+            self.start_pos_x = self.current_pos_x
+            self.start_pos_y = self.current_pos_y
 
-        elif order.data == self.StepOfTunnel.exit.value:
-            rospy.loginfo("Now exit")
+            self.threshold = 0.01
+            while True:  # go straight
+                # print "Obstacle detected: " + str(self.is_obstacle_detected)
+                if self.is_obstacle_detected == True:
+                    twist = Twist()
+                    twist.linear.x = 0.0
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    print "stop"
+                    self.pub_cmd_vel.publish(twist)
+                    break
+                else:
+                    twist = Twist()
+                    twist.linear.x = 0.12
+                    twist.linear.y = 0
+                    twist.linear.z = 0
+                    twist.angular.x = 0
+                    twist.angular.y = 0
+                    twist.angular.z = 0
+                    rospy.sleep(0.1)
+                    self.pub_cmd_vel.publish(twist)
 
-            pub_tunnel_return.data = self.StepOfTunnel.exit.value
+            #
+            # pub_tunnel_return.data = self.StepOfTunnel.go_in_to_tunnel.value
+
+        #
+        # elif order.data == self.StepOfTunnel.navigation.value:
+        #     rospy.loginfo("Now navigation")
+        #     initialPose = PoseWithCovarianceStamped()
+        #     initialPose.header.frame_id = "map"
+        #     initialPose.header.stamp = rospy.Time.now()
+        #     #initialPose.pose.pose = self.odom_msg.pose.pose
+        #     initialPose.pose.pose.position.x =  0.356889128685
+        #     initialPose.pose.pose.position.y = -0.0331343710423
+        #     initialPose.pose.pose.position.z = 0.0
+		#
+        #     initialPose.pose.pose.orientation.x = 0.0
+        #     initialPose.pose.pose.orientation.y = 0.0
+        #     initialPose.pose.pose.orientation.z = 0.00842602775871
+        #     initialPose.pose.pose.orientation.w = 0.999964500398
+        #
+        #     initialPose.pose.covariance = [
+        #         0.1, 0, 0, 0, 0, 0,
+        #         0, 0.1, 0, 0, 0, 0,
+        #         0, 0, 0.1, 0, 0, 0,
+        #         0, 0, 0, 0.1, 0, 0,
+        #         0, 0, 0, 0, 0.1, 0,
+        #         0, 0, 0, 0, 0, 0.1
+        #     ]
+        #
+        #     self.pub_init_pose.publish(initialPose)
+        #
+        #     self.fnPubGoalPose()
+        #
+        #     while True:
+        #         if self.is_navigation_finished == True:
+        #             break
+        #         else:
+        #             pass
+        #
+        #     pub_tunnel_return.data = self.StepOfTunnel.navigation.value
+        #
+        #
+        # elif order.data == self.StepOfTunnel.go_out_from_tunnel.value:
+        #     rospy.loginfo("Now go_out_from_tunnel")
+        #
+        #     self.lastError = 0.0
+        #     self.totalError = 0
+        #     self.start_pos_x = self.current_pos_x
+        #     self.start_pos_y = self.current_pos_y
+        #
+        #     while True:
+        #         error = self.fnStraight(0.80)
+        #
+        #         if math.fabs(error) < 0.005:
+        #             self.totalError = 0
+        #             self.lastError = 0
+        #             break
+        #
+        #     self.fnStop()
+        #
+        #     pub_tunnel_return.data = self.StepOfTunnel.go_out_from_tunnel.value
+        #
+        # elif order.data == self.StepOfTunnel.exit.value:
+        #     rospy.loginfo("Now exit")
+        #
+        #     pub_tunnel_return.data = self.StepOfTunnel.exit.value
 
         self.pub_tunnel_return.publish(pub_tunnel_return)
+
+    def fnTurn(self):
+        err_theta = self.current_theta - self.desired_theta
+
+        # rospy.loginfo("Parking_Turn")
+        # rospy.loginfo("err_theta  desired_theta  current_theta : %f  %f  %f", err_theta, self.desired_theta,
+        #               self.current_theta)
+        Kp = 0.8
+        Ki = 0.01
+        Kd = 0.03
+
+        angular_z = Kp * err_theta + Kd * (err_theta - self.lastError) + Ki * self.totalError
+        self.lastError = err_theta
+        self.totalError += err_theta
+
+        twist = Twist()
+        twist.linear.x = 0
+        twist.linear.y = 0
+        twist.linear.z = 0
+        twist.angular.x = 0
+        twist.angular.y = 0
+        twist.angular.z = -angular_z
+        self.pub_cmd_vel.publish(twist)
+
+        rospy.loginfo("angular_z : %f", angular_z)
+
+        return err_theta
 
     def cbOdom(self, odom_msg):
         quaternion = (odom_msg.pose.pose.orientation.x, odom_msg.pose.pose.orientation.y, odom_msg.pose.pose.orientation.z, odom_msg.pose.pose.orientation.w)
@@ -168,52 +481,52 @@ class DetectTunnel():
     def euler_from_quaternion(self, quaternion):
         theta = tf.transformations.euler_from_quaternion(quaternion)[2]
         return theta
+    #
+    # def fnPubGoalPose(self):
+    #     goalPoseStamped = PoseStamped()
+    #
+    #     goalPoseStamped.header.frame_id = "map"
+    #     goalPoseStamped.header.stamp = rospy.Time.now()
+    #
+    #     goalPoseStamped.pose.position.x =  1.70668339729
+    #     goalPoseStamped.pose.position.y = 1.01771187782
+    #     goalPoseStamped.pose.position.z = 0.0
+    #
+    #     goalPoseStamped.pose.orientation.x = 0.0
+    #     goalPoseStamped.pose.orientation.y = 0.0
+    #     goalPoseStamped.pose.orientation.z =  0.574957689931
+    #     goalPoseStamped.pose.orientation.w =  0.818183142572
+    #     self.pub_goal_pose_stamped.publish(goalPoseStamped)
 
-    def fnPubGoalPose(self):
-        goalPoseStamped = PoseStamped()
-
-        goalPoseStamped.header.frame_id = "map"
-        goalPoseStamped.header.stamp = rospy.Time.now()
-
-        goalPoseStamped.pose.position.x =  1.34729802608
-        goalPoseStamped.pose.position.y =1.38542938232
-        goalPoseStamped.pose.position.z = 0.0
-
-        goalPoseStamped.pose.orientation.x = 0.0
-        goalPoseStamped.pose.orientation.y = 0.0
-        goalPoseStamped.pose.orientation.z =  -1.83900098111e-07
-        goalPoseStamped.pose.orientation.w =  1.0
-        self.pub_goal_pose_stamped.publish(goalPoseStamped)
-
-    def fnStraight(self, desired_dist):
-        err_pos = math.sqrt((self.current_pos_x - self.start_pos_x) ** 2 + (self.current_pos_y - self.start_pos_y) ** 2) - desired_dist
-
-        rospy.loginfo("Tunnel_straight")
-
-        Kp = 1.0
-        Kd = 0.04
-        Ki = 0.001
-
-        twist_x = Kp * err_pos + Kd * (err_pos - self.lastError) + Ki * self.totalError
-
-        self.lastError = err_pos
-        self.totalError += err_pos
-
-        if twist_x > 0.08:
-            twist_x = 0.08
-        if twist_x < -0.08:
-            twist_x = -0.08
-
-        twist = Twist()
-        twist.linear.x = -twist_x #idk why negative but ya this works for some reason
-        twist.linear.y = 0
-        twist.linear.z = 0
-        twist.angular.x = 0
-        twist.angular.y = 0
-        twist.angular.z = 0
-        self.pub_cmd_vel.publish(twist)
-
-        return err_pos
+    # def fnStraight(self, desired_dist):
+    #     err_pos = math.sqrt((self.current_pos_x - self.start_pos_x) ** 2 + (self.current_pos_y - self.start_pos_y) ** 2) - desired_dist
+    #
+    #     rospy.loginfo("Tunnel_straight")
+    #
+    #     Kp = 1.0
+    #     Kd = 0.04
+    #     Ki = 0.001
+    #
+    #     twist_x = Kp * err_pos + Kd * (err_pos - self.lastError) + Ki * self.totalError
+    #
+    #     self.lastError = err_pos
+    #     self.totalError += err_pos
+    #
+    #     if twist_x > 0.08:
+    #         twist_x = 0.08
+    #     if twist_x < -0.08:
+    #         twist_x = -0.08
+    #
+    #     twist = Twist()
+    #     twist.linear.x = -twist_x #idk why negative but ya this works for some reason
+    #     twist.linear.y = 0
+    #     twist.linear.z = 0
+    #     twist.angular.x = 0
+    #     twist.angular.y = 0
+    #     twist.angular.z = 0
+    #     self.pub_cmd_vel.publish(twist)
+    #
+    #     return err_pos
 
     def fnStop(self):
         twist = Twist()

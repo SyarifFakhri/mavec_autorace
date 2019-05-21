@@ -84,9 +84,9 @@ class DetectSign():
                 maxScore = score
                 maxScoreBoundingBoxSize = [res.bbox.size_x, res.bbox.size_y]
 
-        if detectionWithMaxScore == 4 and maxScore > 0.4: #parking
+        if detectionWithMaxScore == 4 and maxScore > 0.35: #parking
             self.parkingCounter += 1
-            if self.parkingCounter > 1:
+            if self.parkingCounter > 3:
                 msg_sign = UInt8()
                 msg_sign.data = self.TrafficSign.parking.value
 
@@ -101,43 +101,45 @@ class DetectSign():
             if self.parkingCounter > 0:
                 self.parkingCounter -= 1
 
-        if detectionWithMaxScore == 5 and maxScore > 0.5: #stop sign
+        if detectionWithMaxScore == 5 and maxScore > 0.3: #stop sign
             self.stopCounter += 1
 
-            if self.stopCounter > 4:
+            if self.stopCounter > 3:
                 msg_sign = UInt8()
                 msg_sign.data = self.TrafficSign.stop.value
 
                 self.pub_traffic_sign.publish(msg_sign)
 
                 msg_pub_max_vel = Float64()
-                msg_pub_max_vel.data = 0.0
-            else:
-                if self.stopCounter > 0:
-                    self.stopCounter -= 1
+                rospy.sleep(0.7)
+                msg_pub_max_vel.data = 0.00
+                self.pub_max_vel.publish(msg_pub_max_vel)
+        else:
+            if self.stopCounter > 0:
+                self.stopCounter -= 1
 
 
-        if detectionWithMaxScore == 7 and maxScore > 0.5:  #barrier only
+        if detectionWithMaxScore == 7 and maxScore > 0.2:  #barrier only
             self.barrierCounter += 1
             #if maxScoreBoundingBoxSize[0] * maxScoreBoundingBoxSize[1] > 1000 and self.barrierCounter > 1: #only above a certain area
-            if self.barrierCounter > 5:
+            if self.barrierCounter > 3:
                 msg_sign = UInt8()
                 msg_sign.data = self.TrafficSign.stop.value
+                self.barrierCounter = 0
 
                 self.pub_traffic_sign.publish(msg_sign)
 
                 msg_pub_max_vel = Float64()
-                msg_pub_max_vel.data = 0.0
-
+                msg_pub_max_vel.data = 0.01
                 self.pub_max_vel.publish(msg_pub_max_vel)
-                rospy.loginfo("TrafficSign 2, STOP SIGN DETECTED")
+                rospy.loginfo("TrafficSign 2, BARRIER DETECTED")
         else:
             if self.barrierCounter > 0:
                 self.barrierCounter -= 1
 
         if detectionWithMaxScore == 6  and maxScore > 0.5: #tunnel sign
             self.tunnelCounter += 1
-            if self.tunnelCounter > 2:
+            if self.tunnelCounter > 30:
                 self.tunnelCounter = 0
                 msg_sign = UInt8()
                 msg_sign.data = self.TrafficSign.tunnel.value

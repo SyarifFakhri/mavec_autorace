@@ -214,7 +214,7 @@ class DetectTrafficLight():
         # print detectionWithMaxScore
         # print maxScoreBoundingBox
 
-        if detectionWithMaxScore == 1 and maxScore > 0.5: # or detectionWithMaxScore == 1: #green
+        if detectionWithMaxScore == 1 and maxScore > 0.3: # or detectionWithMaxScore == 1: #green
             # if self.stop_count >= 0: #detected green
             #     self.stop_count -= 1
             self.green_count += 1
@@ -226,7 +226,7 @@ class DetectTrafficLight():
             #
             # status2 = self.fnFindCircleOfTrafficLight(cv_image_mask, 'yellow')
 
-        if detectionWithMaxScore == 3 and maxScore > 0.5: #detected yellow
+        if detectionWithMaxScore == 3 and maxScore > 0.2: #detected yellow
             self.yellow_count += 1
         else:
             if self.yellow_count > 0:
@@ -237,7 +237,7 @@ class DetectTrafficLight():
         #
         # status3 = self.fnFindCircleOfTrafficLight(cv_image_mask, 'red')
         # print maxScoreBoundingBox
-        if detectionWithMaxScore == 2 and maxScore > 0.5: # and (maxScoreBoundingBox[0] > 50 and maxScoreBoundingBox[0] < 160):
+        if detectionWithMaxScore == 2 and maxScore > 0.3: # and (maxScoreBoundingBox[0] > 50 and maxScoreBoundingBox[0] < 160):
             print "red count"
             self.red_count += 1 #detected red
             print maxScoreBoundingBox[0]
@@ -259,49 +259,55 @@ class DetectTrafficLight():
         else:
             self.no_detection_count = 0
 
-        print("green count: ", self.green_count)
-        print("yellow count: ", self.yellow_count)
-        print("red count: ", self.red_count)
-        print("no detection count: ", self.no_detection_count)
+        # print("green count: ", self.green_count)
+        # print("yellow count: ", self.yellow_count)
+        # print("red count: ", self.red_count)
+        # print("no detection count: ", self.no_detection_count)
         # print("stop count: ", self.stop_count)
-        if self.green_count > 2: #20
+        if self.red_count > 2:  # 8
             msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.15
-            self.pub_max_vel.publish(msg_pub_max_vel)
-            rospy.loginfo("GREEN")
-            # cv2.putText(self.cv_image, "GREEN", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5,
-            #             (80, 255, 0))
-
-        if self.yellow_count > 2: #12
-            msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.00 if not self.off_traffic else 0.00
-            self.pub_max_vel.publish(msg_pub_max_vel)
-            rospy.loginfo("YELLOW")
-            # cv2.putText(self.cv_image, "YELLOW", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5,
-            #             (0, 255, 255))
-
-        if self.red_count > 1: #8
-            msg_pub_max_vel = Float64()
-            msg_pub_max_vel.data = 0.01
+            msg_pub_max_vel.data = 0.02
             self.pub_max_vel.publish(msg_pub_max_vel)
             rospy.loginfo("RED")
-            #go straight a little bit
-            print("going straight a little bit")
-            self.lastError = 0.0
-            self.start_pos_x = self.current_pos_x
-            self.start_pos_y = self.current_pos_y
-
-            while True:
-                error = self.fnStraight(0.10)
-
-                if math.fabs(error) < 0.07:
-                    self.totalError = 0
-                    break
-
-            self.fnStop()
+            self.red_count = 0
+            # #go straight a little bit
+            # print("going straight a little bit")
+            # self.lastError = 0.0
+            # self.start_pos_x = self.current_pos_x
+            # self.start_pos_y = self.current_pos_y
+            #
+            # while True:
+            #     error = self.fnStraight(0.10)
+            #
+            #     if math.fabs(error) < 0.07:
+            #         self.totalError = 0
+            #         break
+            #
+            # self.fnStop()
 
             # cv2.putText(self.cv_image, "RED", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5,
             #             (0, 0, 255))
+
+        if self.yellow_count > 1:  # 12
+            msg_pub_max_vel = Float64()
+            msg_pub_max_vel.data = 0.01
+            self.pub_max_vel.publish(msg_pub_max_vel)
+            rospy.loginfo("YELLOW")
+            self.yellow_count = 0
+            # cv2.putText(self.cv_image, "YELLOW", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5,
+            #             (0, 255, 255))
+
+        if self.green_count > 5: #20
+            msg_pub_max_vel = Float64()
+            msg_pub_max_vel.data = 0.12
+            self.pub_max_vel.publish(msg_pub_max_vel)
+            rospy.loginfo("GREEN")
+            self.green_count = 0
+            # cv2.putText(self.cv_image, "GREEN", (self.point_col, self.point_low), cv2.FONT_HERSHEY_DUPLEX, 0.5,
+            #             (80, 255, 0))
+
+
+
 
         if self.stop_count > 2: #8
             #go straight a little bit
